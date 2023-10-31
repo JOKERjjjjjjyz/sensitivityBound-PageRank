@@ -18,11 +18,7 @@ def Ktop_single(vector_origin,vector_propagate,M,N,k,test,adversary):
     count = 0
     test_matrix = np.zeros((M,k))
     r_matrix = np.zeros((M,k))
-    vector_origin_v = vector_origin.toarray().reshape(-1)
-    nonzero_indices = vector_origin_v.nonzero()
-    print(vector_origin_v.shape,vector_propagate.shape)
-    print(adversary,":",vector_origin_v[694])
-    vector = vector_propagate - 1000 * vector_origin_v
+    vector = vector_propagate.copy()
     #print(vector.shape)
     topk_indices = np.argsort(vector, axis=0)[-k:]
     print(adversary,test[adversary],topk_indices)
@@ -36,7 +32,7 @@ def Ktop_single(vector_origin,vector_propagate,M,N,k,test,adversary):
     if (len(test[adversary]) == 0):
         print(adversary)
         exit
-    recall = recall_count / float(len(test[adversary]))
+    recall = recall_count / float(max(1,len(test[adversary])))
     precision = recall_count / float(k)
     length = k if k <= len(test[adversary]) else len(test[adversary])
     test_matrix[adversary, :length] = 1

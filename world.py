@@ -22,7 +22,7 @@ if not os.path.exists(FILE_PATH):
 
 
 config = {}
-all_dataset = ['ml-1m','lastfm', 'gowalla', 'yelp2018', 'amazon-book']
+all_dataset = ['BlogCatalog','ml-1m','lastfm', 'gowalla', 'yelp2018', 'amazon-book']
 all_models  = ['mf', 'lgn']
 # config['batch_size'] = 4096
 config['bpr_batch_size'] = args.bpr_batch
