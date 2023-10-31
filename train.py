@@ -2,6 +2,7 @@ import numpy as np
 from multiprocessing import Pool
 import math
 import scipy.sparse as sp
+from scipy.sparse import csr_matrix
 def rowM(matrix,M):
     B = matrix[:M]
     return B
@@ -17,17 +18,21 @@ def Ktop_single(vector_origin,vector_propagate,M,N,k,test,adversary):
     count = 0
     test_matrix = np.zeros((M,k))
     r_matrix = np.zeros((M,k))
-    vector = vector_propagate - 10000 * vector_origin
-    vector_array = vector.toarray()
-    topk_indices = np.argsort(vector_array, axis=1)[:, -k:]
+    vector_origin_v = vector_origin.toarray().reshape(-1)
+    nonzero_indices = vector_origin_v.nonzero()
+    print(vector_origin_v.shape,vector_propagate.shape)
+    print(adversary,":",vector_origin_v[694])
+    vector = vector_propagate - 1000 * vector_origin_v
+    #print(vector.shape)
+    topk_indices = np.argsort(vector, axis=0)[-k:]
     print(adversary,test[adversary],topk_indices)
     recall_count=0
+    test2 = np.array(test[adversary])
     for index, item in enumerate(topk_indices):
-        count += 1
-        # print("Ktop:count")
-        if item in test[adversary]:
+        if item in test2:
             recall_count += 1
             r_matrix[adversary, index] = 1
+    print(recall_count)
     if (len(test[adversary]) == 0):
         print(adversary)
         exit
@@ -38,11 +43,11 @@ def Ktop_single(vector_origin,vector_propagate,M,N,k,test,adversary):
     max_r = test_matrix.copy()
     idcg = np.sum(max_r * 1. / np.log2(np.arange(2, k + 2)), axis=1)
     dcg = np.sum(r_matrix * 1. / np.log2(np.arange(2, k + 2)), axis=1)
-    # idcg[idcg == 0.] = 1.
+    idcg[idcg == 0.] = 1.
     ndcg = dcg / idcg
     ndcg[np.isnan(ndcg)] = 0.
     ndcg_value = np.sum(ndcg)
-    F1 = 2 * recall * precision / (recall + precision)
+    F1 = 2 * recall * precision / (1+recall + precision)
     print(f"adversary{adversary}_recall:{recall}")
     return recall,precision,F1,ndcg_value
 def Ktop_single_noise(vector_origin,vector_propagate,noise,M,N,k,test,adversary):
@@ -171,6 +176,7 @@ def pushflowcap(G, s, alpha, xi, sigma, type,V):
         T[s] = 999
     print(T)
     for i in range(1, R + 1):
+        print(i)
         for v in S:
             f[v] = np.minimum(r[v], d[v] * T[v] - h[v])  # Compute the flow to push for node v
             h[v] = h[v] + f[v]  # Update the total pushed flow of node v
@@ -197,7 +203,7 @@ def pushflowcap(G, s, alpha, xi, sigma, type,V):
 
     return p
 
-def pushflowcap_vector(G, s, alpha, xi, sigma, type,V,normG):
+def pushflowcap_vector(G, s, alpha, xi, sigma, type1,V,normG):
     '''
     :param G: <csr matrix>:adjacent matrix D^-1*A
     :param s: source node ID
@@ -211,28 +217,43 @@ def pushflowcap_vector(G, s, alpha, xi, sigma, type,V,normG):
     S = set([s])  # 初始时，S 只包含源节点 s
     s_vector = np.zeros(V)
     s_vector[s] = 1
-    d = np.sum(G, axis=1)  # 度向量
+    d = np.sum(G, axis=1).A  # 度向量
+    d = np.squeeze(d)
     p = np.zeros(V)  # PPR 初始值
     r = np.zeros(V)  # residual 初始值
     r[s] = 1
     h = np.zeros(V)  # total pushed flow 初始值
     f = np.zeros(V)
     R = int(math.log(1/xi) / alpha)  # rounds
+    print(R,f.shape)
     T = np.full(V, sigma / (2 * (2 - alpha)))  # thresholds
-    if type == "joint":
+    if type1 == "joint":
         T[s] = 999
 
     for i in range(1, R + 1):
+        #print((d*T).shape,h.shape)
         f = np.minimum(r, d * T - h)  # Compute the flow to push for node v
+        #print(f.shape)
+        #print("threshold")
+        f = f * s_vector
         h = h + f  # Update the total pushed flow of node v
         r = r - f
-
+        #print("S_prime")
         S_prime = S.copy()
 
         p = p + alpha * f
         r = r + (1 - alpha) / 2 * f
-        r = r + (1 - alpha) / 2 * f.dot(normG)
+        #print("normG start")
+        #print(type(normG),normG.shape)
+        #print(type(f),f.shape)
+        f_sparse = csr_matrix(f)
+        result = f_sparse.dot(normG)
+        result_array = result.toarray()
+        r = r + (1 - alpha) / 2 * result_array
+        #print("normG_end")
+        #print("neighbour start")
         S = UpdateNeighbour(G,S_prime)
+        #print("neighbour finish")
         for node in S:
             s_vector[node] = 1
     return p
@@ -248,21 +269,8 @@ def Neighbour(G,v):
     start_idx = G.indptr[v]
     end_idx = G.indptr[v + 1]
     u_indices = G.indices[start_idx:end_idx]
-    for u in u_indices:  # ??这句的语法可能有问题
+    for u in u_indices:  
         S.add(u)
-# # 用示例邻接矩阵测试算法
-# # 注意：您需要根据您的实际数据创建或加载邻接矩阵 G 和其他参数。
-# # G 是一个 VxV 的邻接矩阵，其中 V 是节点数量。
-# # s 是源节点，alpha 是传送概率，xi 是精度，sigma 是灵敏度，type 是"joint"或"non-joint"。
-# #G = np.array([[0, 1, 1], [1, 0, 0], [1, 0, 0]])
-# G = sp.csr_matrix([[0, 1, 1], [1, 0, 0], [1, 0, 0]])
-# s = 0
-# alpha = 0.4
-# xi = 0.01
-# sigma = 3.0
-# type = "joint"
-#
-# result = pushflowcap(G, s, alpha, xi, sigma, type,3)
-# print(result)
+    return S
 
 
